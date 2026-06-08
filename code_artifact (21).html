@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة المخازن والطلبيات برو - التصدير الصارم ERP</title>
+    
+    <!-- مكتبة التصميم Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- مكتبة قراءة وتصدير الإكسيل SheetJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- مكتبة الأيقونات FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- مكتبة قراءة الباركود عبر الكاميرا -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+        
+        body { font-family: 'Cairo', sans-serif; }
+        
+        /* تنسيقات الطباعة الصارمة والاحترافية للريسيت الحراري 80mm */
+        @media print {
+            body * { 
+                visibility: hidden !important; 
+                height: 0 !important; 
+                overflow: hidden !important; 
+                margin: 0 !important; 
+                padding: 0 !important;
+            }
+            #printable-receipt, #printable-receipt * { 
+                visibility: visible !important; 
+                height: auto !important; 
+                overflow: visible !important;
+            }
+            #printable-receipt { 
+                position: absolute !important; 
+                left: 0 !important; 
+                top: 0 !important; 
+                width: 80mm !important; 
+                max-width: 80mm !important;
+                padding: 4mm !important;
+                margin: 0 !important;
+                font-size: 12px !important;
+                color: black !important;
+                background: white !important;
+                display: block !important;
+            }
+            .no-print { display: none !important; }
+        }
+
+        /* تحسين التمرير (Scrollbar) */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* تعديلات مكتبة قراءة الباركود */
+        #reader__dashboard_section_csr button {
+            background-color: #2563eb !important;
+            color: white !important;
+            padding: 8px 16px !important;
+            border-radius: 8px !important;
+            border: none !important;
+            font-family: 'Cairo', sans-serif !important;
+            cursor: pointer;
+        }
+        #reader__dashboard_section_swaplink { color: #2563eb !important; text-decoration: none; }
+        
+        /* تأثيرات عناوين الجدول للفرز */
+        th.sortable:hover { background-color: #e2e8f0; cursor: pointer; transition: background-color 0.2s; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <!-- القناع الخلفي للشاشات الصغيرة عند فتح القائمة -->
+    <div id="sidebarOverlay" onclick="toggleSidebar(false)" class="fixed inset-0 bg-slate-900/50 z-30 hidden md:hidden transition-opacity duration-300"></div>
+
+    <!-- شريط علوي للهواتف الذكية فقط (Top Navbar for Mobile) -->
+    <header class="md:hidden bg-slate-900 text-white p-4 flex items-center justify-between shadow-md z-20 shrink-0 no-print">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleSidebar(true)" class="text-white text-2xl focus:outline-none hover:text-blue-400">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="flex items-center gap-2">
+                <i class="fas fa-truck-loading text-2xl text-blue-500"></i>
+                <h1 class="text-lg font-bold">المخازن برو</h1>
+            </div>
+        </div>
+        <div id="connStatusMobile" class="text-xs font-bold text-amber-400 bg-slate-800 py-1 px-2.5 rounded-full">
+            <i class="fas fa-spinner fa-spin"></i> جاري الاتصال...
+        </div>
+    </header>
+
+    <!-- القائمة الجانبية (Sidebar) مع دعم السحب والتجاوب الكامل للجوال -->
+    <aside id="sidebarMenu" class="fixed md:static inset-y-0 right-0 w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-40 shrink-0 transform translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out no-print overflow-y-auto">
+        <div class="p-6 text-center border-b border-slate-800 relative">
+            <button onclick="toggleSidebar(false)" class="absolute top-4 left-4 text-slate-400 hover:text-white md:hidden">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+            <i class="fas fa-truck-loading text-4xl text-blue-500 mb-3"></i>
+            <h1 class="text-xl font-bold text-white mb-1">المخازن برو</h1>
+            <div id="connStatus" class="hidden md:flex items-center justify-center gap-2 text-xs font-bold text-amber-400 bg-slate-800 py-1 px-3 rounded-full mx-auto w-max mt-2">
+                <i class="fas fa-spinner fa-spin"></i> جاري الاتصال...
+            </div>
+        </div>
+        <nav class="flex-1 mt-6 space-y-1 px-3 pb-6">
+            <button onclick="switchTab('inventory')" id="btn-inventory" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm bg-blue-600 text-white shadow-lg shadow-blue-900/50">
+                <i class="fas fa-box w-5 text-center"></i> المخزن الرئيسي
+            </button>
+            <button onclick="switchTab('audit')" id="btn-audit" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm hover:bg-slate-800 hover:text-white">
+                <i class="fas fa-clipboard-check w-5 text-center"></i> قسم الجرد الفعلي
+            </button>
+            <button onclick="switchTab('branches')" id="btn-branches" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm hover:bg-slate-800 hover:text-white">
+                <i class="fas fa-store w-5 text-center"></i> إدارة الفروع
+            </button>
+            <button onclick="switchTab('transfer')" id="btn-transfer" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm hover:bg-slate-800 hover:text-white">
+                <i class="fas fa-barcode w-5 text-center"></i> تحويلات وسكانر
+            </button>
+            <button onclick="switchTab('archive')" id="btn-archive" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm hover:bg-slate-800 hover:text-white">
+                <i class="fas fa-history w-5 text-center"></i> أرشيف العمليات
+            </button>
+            <button onclick="switchTab('reports')" id="btn-reports" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm hover:bg-slate-800 hover:text-white">
+                <i class="fas fa-file-invoice w-5 text-center"></i> تقرير الحركة
+            </button>
+            <div class="pt-4 mt-4 border-t border-slate-800">
+                <button onclick="switchTab('logs')" id="btn-logs" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-sm hover:bg-slate-800 hover:text-white">
+                    <i class="fas fa-bolt w-5 text-center"></i> سجل الحركات اللحظي
+                </button>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- المحتوى الرئيسي المتجاوب بالكامل -->
+    <main class="flex-1 overflow-auto relative p-4 md:p-8 no-print w-full">
+        
+        <!-- التنبيهات السريعة (Toast) -->
+        <div id="toastMessage" class="fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-2xl text-white font-bold z-50 transition-all opacity-0 pointer-events-none flex items-center gap-2">
+            <i id="toastIcon" class="fas fa-check-circle"></i>
+            <span id="toastText">تمت العملية</span>
+        </div>
+
+        <!-- 1. المخزن الرئيسي -->
+        <section id="tab-inventory" class="tab-content active bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 min-h-full">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                <div class="text-center md:text-right">
+                    <h2 class="text-2xl font-bold text-slate-800">الرصيد الرئيسي للمجموعة</h2>
+                    <p class="text-sm text-slate-500 mt-1">يتم تحديث الأرصدة تلقائياً، اضغط على العناوين للترتيب</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                    <div class="relative flex-1 md:w-64">
+                        <input type="text" id="searchInput" onkeyup="renderInventory()" placeholder="بحث بالاسم أو الكود..." class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                        <i class="fas fa-search absolute left-3 top-4 text-slate-400"></i>
+                    </div>
+                    <label id="uploadLabel" class="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold cursor-pointer transition-all shadow-sm bg-emerald-500 hover:bg-emerald-600 text-white hover:shadow-md">
+                        <i class="fas fa-file-excel"></i>
+                        <span id="uploadText">تحديث الأرصدة</span>
+                        <input type="file" id="excelUpload" accept=".xlsx, .xls, .csv" class="hidden">
+                    </label>
+                </div>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full border-collapse bg-white text-sm whitespace-nowrap md:whitespace-normal">
+                    <thead>
+                        <tr class="bg-slate-50 text-right text-slate-600 border-b border-slate-200 select-none">
+                            <th onclick="sortTable('subCode')" class="p-4 font-bold sortable hover:text-blue-600">الكود الفرعي <i id="sort-icon-subCode" class="fas fa-sort text-slate-300 mr-1"></i></th>
+                            <th onclick="sortTable('intlCode')" class="p-4 font-bold sortable hover:text-blue-600">الكود الدولي <i id="sort-icon-intlCode" class="fas fa-sort text-slate-300 mr-1"></i></th>
+                            <th onclick="sortTable('name')" class="p-4 font-bold sortable hover:text-blue-600">اسم المنتج <i id="sort-icon-name" class="fas fa-sort text-slate-300 mr-1"></i></th>
+                            <th onclick="sortTable('unit')" class="p-4 font-bold sortable hover:text-blue-600">عدد الوحدات/العلب <i id="sort-icon-unit" class="fas fa-sort text-slate-300 mr-1"></i></th>
+                            <th onclick="sortTable('price')" class="p-4 font-bold sortable hover:text-blue-600">السعر <i id="sort-icon-price" class="fas fa-sort text-slate-300 mr-1"></i></th>
+                            <th onclick="sortTable('stock')" class="p-4 font-bold sortable hover:text-blue-600">الرصيد اللحظي <i id="sort-icon-stock" class="fas fa-sort text-slate-300 mr-1"></i></th>
+                            <th class="p-4 font-bold text-center">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTableBody">
+                        <tr><td colspan="7" class="text-center p-8 text-slate-500">جاري تحميل البيانات...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- قسم جرد المخزن الفعلي -->
+        <section id="tab-audit" class="tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-full relative">
+            <div class="flex flex-col lg:flex-row justify-between items-center mb-8 gap-4">
+                <div class="text-center lg:text-right">
+                    <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2 justify-center lg:justify-start">
+                        <i class="fas fa-clipboard-check text-blue-600"></i>
+                        قسم جرد وتعديل الأرصدة الفعلي
+                    </h2>
+                    <p class="text-sm text-slate-500 mt-1">امسح الباركود لتسجيل الكمية الجديدة أو عدلها يدوياً من الجدول مباشرة.</p>
+                </div>
+                <div class="flex flex-wrap gap-2 w-full lg:w-auto justify-end">
+                    <button onclick="clearAuditData()" class="px-5 py-3 bg-red-50 text-red-600 border border-red-200 font-bold rounded-xl hover:bg-red-100 transition-colors text-sm">
+                        <i class="fas fa-trash-alt ml-1"></i> مسح مسودة الجرد
+                    </button>
+                    <button id="saveAuditBtn" onclick="commitAuditData()" disabled class="px-8 py-3 bg-slate-300 text-slate-500 cursor-not-allowed font-bold rounded-xl transition-all text-sm shadow-md flex items-center gap-2">
+                        <i class="fas fa-save"></i> اعتماد جرد المخزن
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-blue-50/50 border-2 border-blue-100 rounded-2xl p-4 md:p-6 mb-8 text-center relative max-w-3xl mx-auto">
+                <label class="text-blue-900 font-bold text-base md:text-lg mb-3 block">امسح الكود الدولي أو الفرعي للجرد</label>
+                <div class="flex justify-center items-center gap-3 max-w-xl mx-auto">
+                    <input type="text" id="auditBarcodeScannerInput" placeholder="مرر الإسكانر هنا..." class="w-full p-3.5 text-center text-lg tracking-[0.2em] font-mono border-2 border-blue-200 rounded-xl outline-none focus:border-blue-600 focus:shadow-lg transition-all bg-white" dir="ltr">
+                    <button onclick="openCameraScanner('auditBarcodeScannerInput', false, true)" class="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-xl text-lg shadow-lg transition-colors flex-shrink-0" title="فتح الكاميرا للمسح">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full border-collapse bg-white text-sm whitespace-nowrap md:whitespace-normal">
+                    <thead class="bg-slate-800 text-white text-right">
+                        <tr>
+                            <th class="p-4 font-bold">الكود الدولي/الفرعي</th>
+                            <th class="p-4 font-bold">اسم المنتج</th>
+                            <th class="p-4 font-bold text-center">الرصيد الحالي</th>
+                            <th class="p-4 font-bold text-center bg-slate-900">الرصيد الفعلي الجديد</th>
+                            <th class="p-4 font-bold text-center">فارق الجرد</th>
+                            <th class="p-4 font-bold text-center">تعديل سريع</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditTableBody">
+                        <tr><td colspan="6" class="text-center p-8 text-slate-500">جاري تحميل الأصناف...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="auditQtyModal" class="hidden absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl max-w-md w-full border-4 border-blue-500 text-center transform scale-100">
+                    <i class="fas fa-cubes text-blue-500 text-4xl mb-4"></i>
+                    <h3 class="text-xl md:text-2xl font-bold text-slate-800 mb-2" id="auditModalItemName">اسم المنتج</h3>
+                    <p class="text-slate-500 mb-6 text-sm font-semibold">أدخل الرصيد الفعلي الجديد المكتشف في المخزن</p>
+                    <div class="flex justify-center gap-4 mb-6 text-sm font-bold">
+                        <span class="bg-slate-100 px-4 py-2 rounded-lg text-slate-700 text-base">الرصيد الحالي: <span id="auditModalCurrentQty" class="text-blue-600">0</span></span>
+                    </div>
+                    <input type="number" id="auditModalQtyInput" placeholder="الرصيد الجديد..." class="w-full p-4 text-3xl font-bold text-center border-2 border-blue-300 rounded-xl mb-6 outline-none focus:ring-4 focus:ring-blue-100" min="0">
+                    <div class="flex gap-3">
+                        <button onclick="confirmAuditQty()" class="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 shadow-lg">تثبيت الرصيد</button>
+                        <button onclick="closeAuditQtyModal()" class="flex-1 bg-red-50 text-red-600 py-4 rounded-xl font-bold text-lg hover:bg-red-100">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. إدارة الفروع -->
+        <section id="tab-branches" class="tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-full max-w-4xl mx-auto">
+            <h2 class="text-2xl font-bold text-slate-800 mb-8">إدارة الفروع الفرعية</h2>
+            <form id="addBranchForm" class="flex flex-col sm:flex-row gap-4 mb-8">
+                <input type="text" id="branchNameInput" placeholder="أدخل اسم الفرع الجديد..." required class="flex-1 px-5 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-lg">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-md">إضافة فرع</button>
+            </form>
+            <div id="branchesList" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+        </section>
+
+        <!-- 3. التحويلات والسكانر -->
+        <section id="tab-transfer" class="tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-full relative">
+            <div id="transferStep1" class="max-w-2xl mx-auto py-6 md:py-12 block">
+                <div class="text-center mb-10">
+                    <i class="fas fa-barcode text-5xl md:text-6xl text-blue-500 mb-4"></i>
+                    <h2 class="text-2xl md:text-3xl font-bold text-slate-800">تجهيز طلبية جديدة</h2>
+                </div>
+                <div class="space-y-6 md:space-y-8 bg-slate-50 p-6 md:p-8 rounded-2xl border border-slate-100 shadow-inner">
+                    <div>
+                        <label class="block text-slate-700 font-bold mb-3 text-lg">1. اختر الفرع المحول إليه:</label>
+                        <select id="transferBranchSelect" onchange="toggleTransferUpload()" class="w-full p-4 border border-slate-300 rounded-xl text-lg outline-none focus:border-blue-500 bg-white shadow-sm">
+                            <option value="">-- اضغط للاختيار --</option>
+                        </select>
+                    </div>
+                    <div id="transferUploadArea" class="opacity-40 grayscale pointer-events-none transition-all duration-300">
+                        <label class="block text-slate-700 font-bold mb-3 text-lg">2. ارفع شيت الطلبية (Excel):</label>
+                        <label class="w-full flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-blue-300 bg-blue-50 rounded-2xl cursor-pointer hover:bg-blue-100 transition-colors text-center">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-blue-500"></i>
+                            <span class="text-lg md:text-xl font-bold text-blue-800">اضغط لرفع ملف الطلبية المعتمد</span>
+                            <input type="file" id="reqSheetUpload" accept=".xlsx, .xls, .csv" class="hidden">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="transferStep2" class="hidden">
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-8 bg-slate-50 p-4 rounded-xl border border-slate-200 gap-4">
+                    <div class="text-center sm:text-right">
+                        <h2 class="text-xl md:text-2xl font-bold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><i class="fas fa-scanner"></i> القراءة الضوئية (Scanner)</h2>
+                        <p class="text-slate-600 mt-1 font-semibold text-lg">الفرع: <span id="activeTransferBranchName" class="text-blue-600 font-bold"></span></p>
+                    </div>
+                    <button onclick="cancelTransfer()" class="w-full sm:w-auto px-5 py-3 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200 transition-colors">إلغاء الطلبية بالكامل</button>
+                </div>
+
+                <div class="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4 md:p-8 mb-8 text-center transition-all relative" id="scannerArea">
+                    <label class="text-blue-800 font-bold text-lg md:text-xl mb-4 block">مرر جهاز الباركود، أو استخدم كاميرا الجهاز</label>
+                    
+                    <div class="flex justify-center items-center gap-3 max-w-lg mx-auto">
+                        <input type="text" id="barcodeScannerInput" placeholder="|||||||||||||||||||||" class="w-full p-4 md:p-5 text-center text-xl md:text-2xl tracking-[0.2em] font-mono border-2 border-blue-300 rounded-xl outline-none focus:border-blue-600 focus:shadow-lg transition-all block" dir="ltr">
+                        <button onclick="openCameraScanner('barcodeScannerInput', true, false)" class="bg-blue-600 hover:bg-blue-700 text-white p-4 md:p-5 rounded-xl text-xl md:text-2xl shadow-lg transition-colors flex-shrink-0" title="فتح الكاميرا للمسح">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-slate-200 mb-8">
+                    <table class="w-full border-collapse bg-white text-sm whitespace-nowrap md:whitespace-normal">
+                        <thead class="bg-slate-800 text-white text-right">
+                            <tr>
+                                <th class="p-4">المطابقة</th>
+                                <th class="p-4">اسم المنتج</th>
+                                <th class="p-4 text-center">مطلوب</th>
+                                <th class="p-4 text-center">تم مسحه</th>
+                                <th class="p-4 text-center">متبقي</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transferReqTable"></tbody>
+                    </table>
+                </div>
+
+                <div class="flex justify-center md:justify-end pt-6 border-t border-slate-200">
+                    <button id="saveTransferBtn" disabled onclick="saveTransferData()" class="w-full md:w-auto px-10 py-5 text-xl rounded-2xl font-bold flex justify-center items-center gap-3 transition-all bg-slate-200 text-slate-400 cursor-not-allowed">
+                        اعتماد وحفظ التحويل
+                        <i class="fas fa-check-circle text-2xl"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="qtyModal" class="hidden absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl max-w-md w-full border-4 border-amber-400 text-center transform scale-100">
+                    <h3 class="text-xl md:text-2xl font-bold text-slate-800 mb-2" id="modalItemName">اسم المنتج</h3>
+                    <p class="text-slate-600 mb-6 text-sm">أدخل الكمية التي تم سحبها من هذا الصنف</p>
+                    <div class="flex justify-center gap-4 mb-6 text-sm font-bold">
+                        <span class="bg-slate-100 px-3 py-1 rounded text-slate-700">مطلوب: <span id="modalReqQty" class="text-blue-600">0</span></span>
+                        <span class="bg-slate-100 px-3 py-1 rounded text-slate-700">ممسوح: <span id="modalScannedQty" class="text-emerald-600">0</span></span>
+                    </div>
+                    <input type="number" id="modalQtyInput" placeholder="الكمية..." class="w-full p-4 text-2xl font-bold text-center border-2 border-amber-300 rounded-xl mb-6 outline-none focus:ring-4 focus:ring-amber-100">
+                    <div class="flex gap-3">
+                        <button onclick="confirmScanQty()" class="flex-1 bg-emerald-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-emerald-700 shadow-lg">تأكيد</button>
+                        <button onclick="closeQtyModal()" class="flex-1 bg-red-100 text-red-600 py-4 rounded-xl font-bold text-lg hover:bg-red-200">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. أرشيف العمليات -->
+        <section id="tab-archive" class="tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-full relative">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+                <h2 class="text-2xl font-bold text-slate-800">أرشيف التحويلات المحفوظة</h2>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="exportArchiveCSV()" class="flex-1 sm:flex-none flex justify-center items-center gap-2 bg-slate-800 text-white px-8 py-3 rounded-xl hover:bg-slate-700 font-bold transition-colors text-sm md:text-base shadow-lg">
+                        <i class="fas fa-file-csv text-emerald-400"></i> تصدير لنظام ERPNext
+                    </button>
+                </div>
+            </div>
+            <div id="archiveList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                <!-- Archive cards -->
+            </div>
+        </section>
+
+        <!-- 5. تقرير الحركة -->
+        <section id="tab-reports" class="tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-full">
+            <h2 class="text-2xl font-bold text-slate-800 mb-8 flex items-center gap-2"><i class="fas fa-file-invoice text-blue-500"></i> تقرير حركة الأصناف</h2>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full border-collapse bg-white text-sm whitespace-nowrap md:whitespace-normal">
+                    <thead class="bg-slate-800 text-white text-right">
+                        <tr>
+                            <th class="p-4 font-bold">الكود</th>
+                            <th class="p-4 font-bold">المنتج</th>
+                            <th class="p-4 font-bold text-emerald-400">الرصيد الافتتاحي</th>
+                            <th class="p-4 font-bold text-red-400">إجمالي المنصرف</th>
+                            <th class="p-4 font-bold">تفصيل الفروع</th>
+                            <th class="p-4 font-bold text-blue-400 bg-slate-900">الرصيد المتاح</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportsTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 6. سجل الحركات الحصري -->
+        <section id="tab-logs" class="tab-content bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-full">
+            <div class="flex flex-col h-full">
+                <div class="flex flex-col sm:flex-row items-center sm:items-start gap-3 mb-8 pb-4 border-b border-slate-200 text-center sm:text-right">
+                    <i class="fas fa-bolt text-3xl text-amber-500 mt-1"></i>
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-slate-800">سجل حركات النظام اللحظي</h2>
+                        <p class="text-slate-500 text-xs md:text-sm font-semibold mt-2">هذا هو السجل الشامل. يتم تسجيل كافة التحديثات هنا تلقائياً، ولا يتم عرضها في أي صفحة أخرى إطلاقاً.</p>
+                    </div>
+                </div>
+                <div id="logsContainer" class="flex-1 overflow-y-auto space-y-4 pr-2"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ريسيت الطباعة الاحترافي المستقل -->
+    <div id="printable-receipt" class="hidden no-print" dir="rtl"></div>
+
+    <!-- نافذة التعديل -->
+    <div id="editProductModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center no-print p-4">
+        <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl max-w-md w-full border-t-4 border-blue-500">
+            <h3 class="text-lg md:text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <i class="fas fa-edit text-blue-500"></i> تعديل بيانات المنتج
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-slate-600 text-sm font-bold mb-1">اسم المنتج</label>
+                    <input type="text" id="editProdName" readonly class="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-slate-500 cursor-not-allowed">
+                </div>
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-slate-600 text-sm font-bold mb-1">الكود الفرعي</label>
+                        <input type="text" id="editProdSubCode" readonly class="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-slate-500 cursor-not-allowed">
+                    </div>
+                    <div class="flex-1">
+                        <!-- عمود الوحدة رقمي بالكامل -->
+                        <label class="block text-slate-600 text-sm font-bold mb-1">عدد القطع/الوحدات</label>
+                        <input type="number" id="editProdUnit" class="w-full p-3 border border-slate-300 focus:border-blue-500 rounded-xl outline-none transition-colors" placeholder="مثال: 12، 24..." min="1" step="1">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-slate-600 text-sm font-bold mb-1">الكود الدولي (الباركود)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="editProdIntlCode" class="flex-1 w-full p-3 border border-slate-300 focus:border-blue-500 rounded-xl outline-none transition-colors" dir="ltr">
+                        <button onclick="openScannerForEditModal()" class="bg-slate-800 text-white px-4 rounded-xl hover:bg-slate-700 transition-colors flex-shrink-0" title="مسح بالكاميرا">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-8">
+                <button onclick="saveProductEdit()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-md transition-colors">حفظ التعديلات</button>
+                <button onclick="closeEditModal()" class="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة سريعة فريدة ومخصصة لإدخال عدد الوحدات بعد لقط الباركود فوراً -->
+    <div id="unitRequestModal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[70] flex items-center justify-center p-4 no-print">
+        <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl max-w-sm w-full border-t-4 border-amber-500 text-center transform scale-100">
+            <div class="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-boxes text-2xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2">أدخل عدد الوحدات</h3>
+            <p id="unitRequestItemName" class="text-slate-500 text-sm font-semibold mb-6">اسم الصنف</p>
+            <input type="number" id="unitRequestInput" class="w-full p-4 text-center text-3xl font-black border-2 border-amber-300 rounded-2xl mb-6 outline-none focus:ring-4 focus:ring-amber-200" placeholder="مثال: 12" min="1" step="1">
+            <div class="flex gap-3">
+                <button onclick="submitUnitRequest()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-900 py-4 rounded-xl font-bold text-lg shadow-lg shadow-amber-500/20">تأكيد وحفظ</button>
+                <button onclick="closeUnitRequestModal()" class="flex-1 bg-slate-100 text-slate-600 py-4 rounded-xl font-bold text-lg hover:bg-slate-200">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة الكاميرا (تمت إضافة شريط لعرض اسم الصنف) -->
+    <div id="cameraScannerModal" class="hidden fixed inset-0 bg-black/90 z-[60] flex flex-col items-center justify-center no-print p-4">
+        <div class="bg-white rounded-2xl overflow-hidden w-full max-w-lg shadow-2xl relative flex flex-col">
+            <div class="bg-slate-800 text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold"><i class="fas fa-qrcode ml-2"></i> مسح الباركود بالكاميرا</h3>
+                <button onclick="closeCameraScanner()" class="text-red-400 hover:text-red-300 text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <!-- شريط عرض اسم الصنف المراد مسحه لتسهيل الأمر على المستخدم -->
+            <div id="scannerItemTarget" class="hidden bg-amber-500 text-slate-900 p-3 text-center font-bold text-lg shadow-inner">
+                <i class="fas fa-search-location ml-2"></i> جاري قراءة كود: <span id="scannerItemNameSpan" class="text-white font-black underline"></span>
+            </div>
+
+            <div id="reader" class="w-full bg-black min-h-[300px]"></div>
+        </div>
+        <p class="text-white mt-4 text-sm font-bold text-center">قم بتوجيه الكاميرا نحو الباركود بشكل واضح</p>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getDatabase, ref, set, update, onValue, push, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+        const firebaseConfig = {
+            databaseURL: "https://stor2-e0b32-default-rtdb.firebaseio.com/"
+        };
+
+        let app, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getDatabase(app);
+        } catch (e) {
+            console.error("Firebase Init Error:", e);
+            alert("حدث خطأ في تهيئة قاعدة البيانات. تأكد من الرابط أو إعدادات الإنترنت.");
+        }
+
+        window.globalData = { inventory: {}, branches: {}, transfers: {}, logs: {} };
+
+        // متغيرات الفرز (الترتيب) للمخزن
+        let currentSortCol = 'subCode';
+        let currentSortAsc = true;
+
+        let currentTransferReqs = [];
+        let selectedBranchIdForTransfer = '';
+        let activeScannedItemIndex = -1;
+        let html5QrcodeScanner = null;
+        let targetScannerInputId = null;
+        let isTransferScannerMode = false;
+        let isAuditScannerMode = false;
+
+        window.auditData = {}; 
+        let activeAuditSubCode = '';
+
+        // متغيرات حفظ المسار للتتابع التلقائي مع طلب الوحدات الرقمية
+        let pendingSubCodeForUnit = '';
+        let pendingDecodedBarcode = '';
+
+        // دالة إظهار وإخفاء القائمة الجانبية
+        window.toggleSidebar = function(open) {
+            const sidebar = document.getElementById('sidebarMenu');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (open) {
+                sidebar.classList.remove('translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        window.showToast = function(msg, type = 'success') {
+            const toast = document.getElementById('toastMessage');
+            const icon = document.getElementById('toastIcon');
+            const text = document.getElementById('toastText');
+            
+            text.innerText = msg;
+            if (type === 'error') {
+                toast.className = "fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-2xl text-white font-bold z-50 transition-all flex items-center gap-2 bg-red-600 opacity-100 translate-y-0";
+                icon.className = "fas fa-exclamation-triangle";
+            } else {
+                toast.className = "fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-2xl text-white font-bold z-50 transition-all flex items-center gap-2 bg-emerald-600 opacity-100 translate-y-0";
+                icon.className = "fas fa-check-circle";
+            }
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', '-translate-y-4');
+            }, 3000);
+        }
+
+        window.logAction = async function(desc, type = 'info') {
+            try {
+                await push(ref(db, 'logs'), {
+                    description: desc,
+                    type: type,
+                    timestamp: Date.now(),
+                    dateStr: new Date().toLocaleString('ar-EG')
+                });
+            } catch (e) {}
+        }
+
+        window.switchTab = function(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                el.classList.remove('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-900/50');
+                el.classList.add('hover:bg-slate-800', 'hover:text-white');
+            });
+
+            document.getElementById('tab-' + tabId).classList.add('active');
+            const btn = document.getElementById('btn-' + tabId);
+            btn.classList.remove('hover:bg-slate-800', 'hover:text-white');
+            btn.classList.add('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-900/50');
+
+            toggleSidebar(false);
+
+            if(tabId === 'transfer' && !document.getElementById('transferStep1').classList.contains('block')) {
+                setTimeout(() => document.getElementById('barcodeScannerInput').focus(), 100);
+            }
+            if(tabId === 'audit') {
+                renderAuditTable();
+                setTimeout(() => document.getElementById('auditBarcodeScannerInput').focus(), 100);
+            }
+        }
+
+        const connStatus = document.getElementById('connStatus');
+        const connStatusMobile = document.getElementById('connStatusMobile');
+        onValue(ref(db, '.info/connected'), (snap) => {
+            const isConnected = snap.val() === true;
+            const statusHtml = isConnected 
+                ? '<i class="fas fa-wifi text-emerald-400"></i> متصل لحظياً'
+                : '<i class="fas fa-spinner fa-spin text-amber-400"></i> جاري الاتصال...';
+            
+            if (connStatus) {
+                connStatus.innerHTML = statusHtml;
+                connStatus.className = isConnected 
+                    ? "hidden md:flex items-center justify-center gap-2 text-xs font-bold text-emerald-400 bg-slate-800 py-1 px-3 rounded-full mx-auto w-max mt-2"
+                    : "hidden md:flex items-center justify-center gap-2 text-xs font-bold text-amber-400 bg-slate-800 py-1 px-3 rounded-full mx-auto w-max mt-2";
+            }
+            if (connStatusMobile) {
+                connStatusMobile.innerHTML = statusHtml;
+                connStatusMobile.className = isConnected
+                    ? "text-xs font-bold text-emerald-400 bg-slate-800 py-1 px-2.5 rounded-full"
+                    : "text-xs font-bold text-amber-400 bg-slate-800 py-1 px-2.5 rounded-full";
+            }
+        });
+
+        onValue(ref(db, 'inventory'), (snapshot) => {
+            window.globalData.inventory = snapshot.val() || {};
+            renderInventory();
+            renderReports();
+            if(document.getElementById('tab-audit').classList.contains('active')) renderAuditTable();
+        });
+
+        onValue(ref(db, 'branches'), (snapshot) => {
+            window.globalData.branches = snapshot.val() || {};
+            renderBranches();
+            updateBranchSelects();
+        });
+
+        onValue(ref(db, 'transfers'), (snapshot) => {
+            window.globalData.transfers = snapshot.val() || {};
+            renderArchive();
+            renderReports();
+        });
+
+        onValue(ref(db, 'logs'), (snapshot) => {
+            window.globalData.logs = snapshot.val() || {};
+            renderLogs(); 
+        });
+
+        document.getElementById('excelUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const uploadText = document.getElementById('uploadText');
+            const uploadLabel = document.getElementById('uploadLabel');
+            uploadText.innerText = "جاري المعالجة...";
+            uploadLabel.classList.replace('bg-emerald-500', 'bg-slate-400');
+
+            const reader = new FileReader();
+            reader.onload = async function(evt) {
+                try {
+                    const data = evt.target.result;
+                    const workbook = XLSX.read(data, { type: 'binary' });
+                    const rawJson = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    
+                    const updates = {};
+                    let newCount = 0, updateCount = 0;
+
+                    rawJson.forEach(row => {
+                        const keys = Object.keys(row);
+                        const findVal = (kws) => { const k = keys.find(x => kws.some(kw => x.toString().toLowerCase().includes(kw))); return k ? row[k] : null; };
+
+                        const subCode = findVal(['فرعي', 'sub'])?.toString();
+                        const intlCode = findVal(['دولي', 'intl', 'barcode', 'باركود'])?.toString() || '';
+                        const name = findVal(['اسم', 'الصنف', 'name', 'product'])?.toString() || 'صنف غير معروف';
+                        // تحويل معامل قراءة الوحدة ليدعم الأرقام بشكل افتراضي
+                        const rawUnit = parseFloat(findVal(['وحدة', 'unit', 'uom', 'قطع']) || 1);
+                        const unit = isNaN(rawUnit) ? 1 : rawUnit; 
+                        const price = parseFloat(findVal(['سعر', 'price']) || 0);
+                        const stock = parseInt(findVal(['رصيد', 'كمية', 'stock', 'qty']) || 0);
+
+                        if (!subCode) return;
+
+                        const existingItem = window.globalData.inventory[subCode];
+                        
+                        if (existingItem) {
+                            updates[`inventory/${subCode}`] = {
+                                ...existingItem,
+                                price: price,
+                                stock: stock,
+                                unit: existingItem.unit ? parseFloat(existingItem.unit) : unit, 
+                                lastUpdated: Date.now()
+                            };
+                            updateCount++;
+                        } else {
+                            updates[`inventory/${subCode}`] = {
+                                subCode: subCode,
+                                intlCode: intlCode,
+                                name: name,
+                                unit: unit,
+                                price: price,
+                                stock: stock,
+                                openingStock: stock,
+                                lastUpdated: Date.now()
+                            };
+                            newCount++;
+                        }
+                    });
+                    await update(ref(db), updates);
+                    showToast(`تم رفع الإكسيل: إضافة ${newCount}، وتحديث ${updateCount}.`);
+                } catch (err) {
+                    showToast('خطأ في قراءة ملف الإكسيل', 'error');
+                } finally {
+                    uploadText.innerText = "تحديث الأرصدة (Excel)";
+                    uploadLabel.classList.replace('bg-slate-400', 'bg-emerald-500');
+                    e.target.value = '';
+                }
+            };
+            reader.readAsBinaryString(file);
+        });
+
+        // دالة الفرز للأعمدة
+        window.sortTable = function(column) {
+            if (currentSortCol === column) {
+                currentSortAsc = !currentSortAsc;
+            } else {
+                currentSortCol = column;
+                currentSortAsc = true;
+            }
+            renderInventory();
+        }
+
+        window.renderInventory = function() {
+            const tbody = document.getElementById('inventoryTableBody');
+            const searchVal = document.getElementById('searchInput').value.toLowerCase();
+            const invData = window.globalData.inventory;
+            tbody.innerHTML = '';
+            
+            // تحديث أيقونات الترتيب
+            document.querySelectorAll('th.sortable i').forEach(icon => {
+                icon.className = 'fas fa-sort text-slate-300 mr-1 text-xs';
+            });
+            const activeIcon = document.getElementById(`sort-icon-${currentSortCol}`);
+            if(activeIcon) {
+                activeIcon.className = currentSortAsc ? 'fas fa-sort-up text-blue-600 mr-1 text-sm' : 'fas fa-sort-down text-blue-600 mr-1 text-sm';
+            }
+
+            // تحويل الكائن إلى مصفوفة للفرز
+            let itemsArray = [];
+            for (const key in invData) {
+                itemsArray.push(invData[key]);
+            }
+
+            // الفلترة بالبحث
+            itemsArray = itemsArray.filter(item => {
+                const intlMatch = item.intlCode ? item.intlCode.toLowerCase().includes(searchVal) : false;
+                return item.name.toLowerCase().includes(searchVal) || item.subCode.toLowerCase().includes(searchVal) || intlMatch;
+            });
+
+            // الفرز (Sorting)
+            itemsArray.sort((a, b) => {
+                let valA = a[currentSortCol];
+                let valB = b[currentSortCol];
+                
+                if (valA === undefined) valA = '';
+                if (valB === undefined) valB = '';
+
+                // الفرز الرقمي للوحدات والأسعار والأرصدة
+                if (currentSortCol === 'price' || currentSortCol === 'stock' || currentSortCol === 'unit') {
+                    return currentSortAsc ? parseFloat(valA || 0) - parseFloat(valB || 0) : parseFloat(valB || 0) - parseFloat(valA || 0);
+                }
+
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                if (valA < valB) return currentSortAsc ? -1 : 1;
+                if (valA > valB) return currentSortAsc ? 1 : -1;
+                return 0;
+            });
+
+            if (itemsArray.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center p-12 text-slate-500 font-bold text-lg">لا توجد بيانات مطابقة.</td></tr>`;
+                return;
+            }
+
+            // رسم الجدول
+            itemsArray.forEach(item => {
+                const stockClass = item.stock > 10 ? 'bg-emerald-100 text-emerald-700' : (item.stock > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700');
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-slate-100 hover:bg-blue-50/50 transition-colors";
+                tr.innerHTML = `
+                    <td class="p-4 font-mono text-sm text-slate-600">${item.subCode}</td>
+                    <td class="p-4 font-mono text-sm text-slate-600" dir="ltr">${item.intlCode || '<span class="text-slate-300">بدون كود دولي</span>'}</td>
+                    <td class="p-4 font-semibold text-slate-800">${item.name}</td>
+                    <td class="p-4 font-bold text-slate-600 text-center">${item.unit !== undefined ? item.unit : 1}</td>
+                    <td class="p-4 text-emerald-600 font-bold">${item.price} ج.م</td>
+                    <td class="p-4"><span class="px-4 py-1.5 rounded-lg text-sm font-bold flex items-center w-max gap-2 ${stockClass}"><i class="fas fa-bolt"></i> ${item.stock}</span></td>
+                    <td class="p-4 text-center">
+                        <button onclick="openEditModal('${item.subCode}')" class="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg transition-colors font-bold text-sm">تعديل</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.openEditModal = function(subCode) {
+            const item = window.globalData.inventory[subCode];
+            if(!item) return;
+            document.getElementById('editProdName').value = item.name;
+            document.getElementById('editProdSubCode').value = item.subCode;
+            document.getElementById('editProdUnit').value = item.unit !== undefined ? item.unit : 1; 
+            document.getElementById('editProdIntlCode').value = item.intlCode || '';
+            document.getElementById('editProductModal').classList.remove('hidden');
+        }
+
+        window.closeEditModal = function() { document.getElementById('editProductModal').classList.add('hidden'); }
+
+        window.saveProductEdit = async function() {
+            const subCode = document.getElementById('editProdSubCode').value;
+            const newIntlCode = document.getElementById('editProdIntlCode').value.trim();
+            const newUnit = parseFloat(document.getElementById('editProdUnit').value) || 1; 
+            
+            if(!subCode) return;
+            try {
+                await update(ref(db, `inventory/${subCode}`), { 
+                    intlCode: newIntlCode, 
+                    unit: newUnit,
+                    lastUpdated: Date.now() 
+                });
+                showToast('تم تحديث بيانات المنتج بنجاح');
+                closeEditModal();
+                
+                // الانتقال التلقائي الذكي للصنف التالي
+                navigateToNextMissingBarcodeItem(subCode);
+            } catch (err) { showToast('خطأ أثناء حفظ التعديلات', 'error'); }
+        }
+
+        window.openScannerForEditModal = function() {
+            const itemName = document.getElementById('editProdName').value;
+            const subCode = document.getElementById('editProdSubCode').value;
+            openCameraScanner('editProdIntlCode', false, false, itemName, subCode);
+        }
+
+        // دالة مخصصة للبحث وفتح الكاميرا تلقائياً للصنف التالي الخالي من الباركود الدولي
+        function navigateToNextMissingBarcodeItem(currentSubCode) {
+            const invData = window.globalData.inventory;
+            const keys = Object.keys(invData);
+            const currentIndex = keys.indexOf(currentSubCode);
+            
+            let nextItemFound = null;
+            for (let i = currentIndex + 1; i < keys.length; i++) {
+                const item = invData[keys[i]];
+                if (!item.intlCode || item.intlCode.trim() === '') {
+                    nextItemFound = item;
+                    break;
+                }
+            }
+            if (!nextItemFound) {
+                for (let i = 0; i < currentIndex; i++) {
+                    const item = invData[keys[i]];
+                    if (!item.intlCode || item.intlCode.trim() === '') {
+                        nextItemFound = item;
+                        break;
+                    }
+                }
+            }
+
+            if (nextItemFound) {
+                showToast(`تم الانتقال للصنف التالي: ${nextItemFound.name}`);
+                setTimeout(() => {
+                    openEditModal(nextItemFound.subCode);
+                    openCameraScanner('editProdIntlCode', false, false, nextItemFound.name, nextItemFound.subCode);
+                }, 1000);
+            } else {
+                showToast('اكتملت جميع الأكواد الدولية للأصناف بنجاح!');
+            }
+        }
+
+        // --- دوال النافذة المنبثقة المخصصة لطلب عدد الوحدات بعد مسح الكاميرا ---
+        window.openUnitRequestModal = function(itemName, subCode, barcode) {
+            pendingSubCodeForUnit = subCode;
+            pendingDecodedBarcode = barcode;
+            
+            document.getElementById('unitRequestItemName').innerText = itemName;
+            // الحصول على القيمة السابقة للوحدة وتعيينها لسهولة التعديل
+            const currentUnit = window.globalData.inventory[subCode]?.unit || 1;
+            document.getElementById('unitRequestInput').value = currentUnit;
+
+            document.getElementById('unitRequestModal').classList.remove('hidden');
+            setTimeout(() => {
+                const input = document.getElementById('unitRequestInput');
+                input.focus();
+                input.select();
+            }, 100);
+        }
+
+        window.closeUnitRequestModal = function() {
+            document.getElementById('unitRequestModal').classList.add('hidden');
+            pendingSubCodeForUnit = '';
+            pendingDecodedBarcode = '';
+        }
+
+        // زر التأكيد في نافذة الوحدات وحفظ التغييرات بالفايربيز وبدء التتابع للصنف القادم
+        window.submitUnitRequest = async function() {
+            const unitInput = document.getElementById('unitRequestInput');
+            const unitValue = parseFloat(unitInput.value) || 1;
+
+            if (unitValue < 1) {
+                showToast('الرجاء إدخال رقم وحدات صحيح أكبر من الصفر', 'error');
+                return;
+            }
+
+            try {
+                // حفظ الكود الدولي والوحدة الرقمية الجديدة في نفس الوقت
+                await update(ref(db, `inventory/${pendingSubCodeForUnit}`), { 
+                    intlCode: pendingDecodedBarcode, 
+                    unit: unitValue,
+                    lastUpdated: Date.now() 
+                });
+                
+                showToast('تم حفظ الكود والوحدة بنجاح!');
+                closeUnitRequestModal();
+                closeEditModal();
+
+                // الانتقال التلقائي الذكي للصنف التالي
+                navigateToNextMissingBarcodeItem(pendingSubCodeForUnit);
+            } catch (err) {
+                showToast('حدث خطأ أثناء الحفظ', 'error');
+            }
+        }
+
+        // دعم ضغط زر Enter لتأكيد الوحدات سريعاً
+        document.getElementById('unitRequestInput').addEventListener('keyup', function(e) {
+            if (e.key === 'Enter') {
+                submitUnitRequest();
+            }
+        });
+
+        window.renderAuditTable = function() {
+            const tbody = document.getElementById('auditTableBody');
+            const invData = window.globalData.inventory;
+            tbody.innerHTML = '';
+            let hasItems = false;
+            let hasAuditChanges = Object.keys(window.auditData).length > 0;
+
+            for (const key in invData) {
+                hasItems = true;
+                const item = invData[key];
+                const auditedQty = window.auditData[key];
+                
+                let displayAudited = '—';
+                let differenceHtml = '—';
+                let rowBgClass = 'hover:bg-slate-50';
+
+                if (auditedQty !== undefined) {
+                    displayAudited = `<span class="px-3 py-1.5 bg-blue-100 text-blue-800 font-black rounded-lg text-base">${auditedQty}</span>`;
+                    const diff = auditedQty - item.stock;
+                    if (diff === 0) { differenceHtml = `<span class="px-2 py-1 bg-sky-100 text-sky-800 font-bold rounded-lg">مطابق</span>`; rowBgClass = 'bg-sky-50/40 hover:bg-sky-50/80'; }
+                    else if (diff > 0) { differenceHtml = `<span class="px-2 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg">+${diff} زيادة</span>`; rowBgClass = 'bg-emerald-50/40 hover:bg-emerald-50/80'; }
+                    else { differenceHtml = `<span class="px-2 py-1 bg-red-100 text-red-800 font-bold rounded-lg">${diff} عجز</span>`; rowBgClass = 'bg-red-50/40 hover:bg-red-50/80'; }
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = `border-b border-slate-100 transition-colors ${rowBgClass}`;
+                tr.innerHTML = `
+                    <td class="p-4"><span class="font-bold text-slate-800">${item.subCode}</span>${item.intlCode ? `<br><small class="text-slate-400 font-mono" dir="ltr">${item.intlCode}</small>` : ''}</td>
+                    <td class="p-4 font-semibold text-slate-700">${item.name}</td>
+                    <td class="p-4 text-center font-bold text-slate-600 text-base">${item.stock}</td>
+                    <td class="p-4 text-center">${displayAudited}</td>
+                    <td class="p-4 text-center">${differenceHtml}</td>
+                    <td class="p-4 text-center"><button onclick="openDirectAuditQtyModal('${item.subCode}')" class="bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors">رصد الجرد</button></td>
+                `;
+                tbody.appendChild(tr);
+            }
+            if (!hasItems) tbody.innerHTML = `<tr><td colspan="6" class="text-center p-12 text-slate-500 font-bold text-lg">يرجى رفع ملف الأرصدة أولاً.</td></tr>`;
+
+            const saveBtn = document.getElementById('saveAuditBtn');
+            if (hasAuditChanges) {
+                saveBtn.disabled = false;
+                saveBtn.className = "px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all text-sm shadow-md flex items-center gap-2 cursor-pointer shadow-emerald-500/20";
+            } else {
+                saveBtn.disabled = true;
+                saveBtn.className = "px-8 py-3 bg-slate-200 text-slate-400 font-bold rounded-xl transition-all text-sm shadow-md flex items-center gap-2 cursor-not-allowed";
+            }
+        }
+
+        document.getElementById('auditBarcodeScannerInput').addEventListener('keyup', function(e) {
+            if (e.key === 'Enter' && this.value.trim()) { processAuditBarcode(this.value.trim()); this.value = ''; }
+        });
+
+        window.processAuditBarcode = function(code) {
+            if (!code) return;
+            const invData = window.globalData.inventory;
+            let foundSubCode = null;
+            for (const subCode in invData) {
+                if (invData[subCode].intlCode === code || subCode === code) { foundSubCode = subCode; break; }
+            }
+            if (!foundSubCode) { showToast(`الكود الممسوح غير متطابق!`, 'error'); return; }
+            openDirectAuditQtyModal(foundSubCode);
+        }
+
+        window.openDirectAuditQtyModal = function(subCode) {
+            const item = window.globalData.inventory[subCode];
+            if (!item) return;
+            activeAuditSubCode = subCode;
+            document.getElementById('auditModalItemName').innerText = item.name;
+            document.getElementById('auditModalCurrentQty').innerText = item.stock;
+            document.getElementById('auditModalQtyInput').value = window.auditData[subCode] !== undefined ? window.auditData[subCode] : '';
+            document.getElementById('auditQtyModal').classList.remove('hidden');
+            setTimeout(() => { const input = document.getElementById('auditModalQtyInput'); input.focus(); input.select(); }, 100);
+        }
+
+        window.confirmAuditQty = function() {
+            const input = document.getElementById('auditModalQtyInput');
+            const qty = parseInt(input.value);
+            if (isNaN(qty) || qty < 0) { showToast('يرجى كتابة رصيد جرد صحيح', 'error'); return; }
+            window.auditData[activeAuditSubCode] = qty;
+            closeAuditQtyModal();
+            renderAuditTable();
+            showToast(`تم رصد رصيد الجرد المؤقت!`);
+        }
+
+        window.closeAuditQtyModal = function() {
+            document.getElementById('auditQtyModal').classList.add('hidden');
+            document.getElementById('modalQtyInput').value = '';
+            activeAuditSubCode = '';
+            setTimeout(() => document.getElementById('auditBarcodeScannerInput').focus(), 100);
+        }
+
+        window.clearAuditData = function() {
+            if (Object.keys(window.auditData).length === 0) return;
+            if (confirm("هل أنت متأكد من مسح مسودة الجرد؟")) { window.auditData = {}; renderAuditTable(); showToast("تم تصفير المسودة."); }
+        }
+
+        window.commitAuditData = async function() {
+            const auditKeys = Object.keys(window.auditData);
+            if (auditKeys.length === 0) return;
+            if (!confirm(`هل أنت متأكد من اعتماد رصيد الجرد لـ (${auditKeys.length}) صنف؟`)) return;
+
+            const btn = document.getElementById('saveAuditBtn');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-2"></i> جاري الحفظ والتحديث...';
+            btn.disabled = true;
+
+            try {
+                const updates = {};
+                auditKeys.forEach(subCode => { updates[`inventory/${subCode}/stock`] = window.auditData[subCode]; });
+                await update(ref(db), updates);
+                showToast(`تم تحديث أرصدة المخازن بنجاح!`);
+                window.auditData = {};
+                renderAuditTable();
+            } catch (err) { showToast("حدث خطأ أثناء الاعتماد.", "error"); } 
+            finally { btn.innerHTML = originalHtml; btn.disabled = false; }
+        }
+
+        document.getElementById('addBranchForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const input = document.getElementById('branchNameInput');
+            const name = input.value.trim();
+            if (!name) return;
+            try { await push(ref(db, 'branches'), { name: name, createdAt: Date.now() }); input.value = ''; showToast('تمت الإضافة بنجاح'); } 
+            catch (err) { showToast('حدث خطأ', 'error'); }
+        });
+
+        function renderBranches() {
+            const container = document.getElementById('branchesList');
+            container.innerHTML = '';
+            const branches = window.globalData.branches;
+            for (const key in branches) {
+                container.innerHTML += `<div class="flex items-center gap-4 p-5 border border-slate-200 rounded-xl bg-slate-50 hover:border-blue-300 transition-colors"><div class="p-3 bg-blue-100 text-blue-600 rounded-lg"><i class="fas fa-store w-6 text-center text-xl"></i></div><span class="font-bold text-lg text-slate-700">${branches[key].name}</span></div>`;
+            }
+        }
+
+        function updateBranchSelects() {
+            const select = document.getElementById('transferBranchSelect');
+            select.innerHTML = '<option value="">-- اضغط للاختيار --</option>';
+            const branches = window.globalData.branches;
+            for (const key in branches) { select.innerHTML += `<option value="${key}">${branches[key].name}</option>`; }
+        }
+
+        window.toggleTransferUpload = function() {
+            selectedBranchIdForTransfer = document.getElementById('transferBranchSelect').value;
+            const area = document.getElementById('transferUploadArea');
+            if (selectedBranchIdForTransfer) area.classList.remove('opacity-40', 'grayscale', 'pointer-events-none');
+            else area.classList.add('opacity-40', 'grayscale', 'pointer-events-none');
+        };
+
+        document.getElementById('reqSheetUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || !selectedBranchIdForTransfer) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const rawJson = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
+                    const invData = window.globalData.inventory;
+                    currentTransferReqs = [];
+                    rawJson.forEach(row => {
+                        const keys = Object.keys(row);
+                        const subCode = row[keys.find(x => ['فرعي', 'sub'].some(kw => x.toLowerCase().includes(kw)))]?.toString();
+                        const reqQty = parseInt(row[keys.find(x => ['مطلوب', 'كمية', 'req'].some(kw => x.toLowerCase().includes(kw)))] || 0);
+                        if (!subCode || reqQty <= 0) return;
+                        if (invData[subCode]) currentTransferReqs.push({ ...invData[subCode], reqQty: reqQty, scannedQty: 0, status: 'pending' });
+                    });
+                    if (currentTransferReqs.length === 0) throw new Error("لا توجد أصناف صالحة");
+                    document.getElementById('transferStep1').classList.replace('block', 'hidden');
+                    document.getElementById('transferStep2').classList.replace('hidden', 'block');
+                    document.getElementById('activeTransferBranchName').innerText = window.globalData.branches[selectedBranchIdForTransfer].name;
+                    renderTransferTable();
+                    showToast('تم تحميل الطلبية.');
+                    setTimeout(() => document.getElementById('barcodeScannerInput').focus(), 100);
+                } catch (err) { showToast('خطأ في الشيت.', 'error'); } 
+                finally { e.target.value = ''; }
+            };
+            reader.readAsBinaryString(file);
+        });
+
+        window.processScannedBarcode = function(code) {
+            code = code.trim();
+            if(!code) return;
+            const idx = currentTransferReqs.findIndex(i => i.intlCode === code || i.subCode === code);
+            if (idx === -1) { showToast(`الكود (${code}) غير مطلوب للفرع!`, 'error'); return; }
+            const item = currentTransferReqs[idx];
+            if (item.scannedQty >= item.reqQty) { showToast('تم استكمال الكمية', 'error'); return; }
+            activeScannedItemIndex = idx;
+            document.getElementById('modalItemName').innerText = item.name;
+            document.getElementById('modalReqQty').innerText = item.reqQty;
+            document.getElementById('modalScannedQty').innerText = item.scannedQty;
+            document.getElementById('qtyModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('modalQtyInput').focus(), 50);
+        }
+
+        document.getElementById('barcodeScannerInput').addEventListener('keyup', function(e) {
+            if (e.key === 'Enter' && this.value.trim()) { processScannedBarcode(this.value); this.value = ''; }
+        });
+
+        window.confirmScanQty = function() {
+            const qty = parseInt(document.getElementById('modalQtyInput').value);
+            if (isNaN(qty) || qty <= 0) return;
+            const item = currentTransferReqs[activeScannedItemIndex];
+            if (item.scannedQty + qty > item.reqQty) { showToast('الكمية أكبر من المطلوبة!', 'error'); return; }
+            if (item.scannedQty + qty > item.stock) { showToast(`عجز في المخزن!`, 'error'); return; }
+            item.scannedQty += qty;
+            item.status = (item.scannedQty === item.reqQty) ? 'complete' : 'partial';
+            
+            const wasCameraActive = !document.getElementById('cameraScannerModal').classList.contains('hidden') && isTransferScannerMode;
+            
+            closeQtyModal();
+            renderTransferTable();
+
+            if (wasCameraActive) {
+                const stillNeedsScanning = currentTransferReqs.some(i => i.status !== 'complete');
+                if (stillNeedsScanning) {
+                    setTimeout(() => {
+                        openCameraScanner('barcodeScannerInput', true, false);
+                    }, 600);
+                } else {
+                    showToast('تم استيفاء جميع كميات أصناف الطلبية بالكامل!');
+                }
+            }
+        }
+
+        window.closeQtyModal = function() {
+            document.getElementById('qtyModal').classList.add('hidden');
+            document.getElementById('modalQtyInput').value = '';
+            activeScannedItemIndex = -1;
+            setTimeout(() => document.getElementById('barcodeScannerInput').focus(), 100);
+        }
+
+        function renderTransferTable() {
+            const tbody = document.getElementById('transferReqTable');
+            tbody.innerHTML = '';
+            let allComplete = true;
+            currentTransferReqs.forEach(item => {
+                if (item.status !== 'complete') allComplete = false;
+                let icon = '<i class="fas fa-circle text-slate-300"></i>';
+                let rowClass = '';
+                if (item.status === 'complete') { icon = '<i class="fas fa-check-circle text-emerald-500"></i>'; rowClass = 'bg-emerald-50'; }
+                else if (item.status === 'partial') { icon = '<i class="fas fa-exclamation-triangle text-amber-500"></i>'; rowClass = 'bg-amber-50'; }
+                tbody.innerHTML += `<tr class="border-b border-slate-100 ${rowClass}"><td class="p-4 text-center">${icon}</td><td class="p-4 font-bold text-slate-800">${item.name} <br><small class="text-slate-500 font-mono" dir="ltr">${item.intlCode || item.subCode}</small></td><td class="p-4 text-center font-bold text-lg">${item.reqQty}</td><td class="p-4 text-center font-bold text-lg text-blue-600">${item.scannedQty}</td><td class="p-4 text-center font-bold text-lg text-red-500">${item.reqQty - item.scannedQty > 0 ? item.reqQty - item.scannedQty : '✓'}</td></tr>`;
+            });
+            const saveBtn = document.getElementById('saveTransferBtn');
+            if (allComplete && currentTransferReqs.length > 0) { saveBtn.disabled = false; saveBtn.className = "px-10 py-5 text-xl rounded-2xl font-bold flex justify-center items-center gap-3 transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-600/30 w-full md:w-auto"; } 
+            else { saveBtn.disabled = true; saveBtn.className = "px-10 py-5 text-xl rounded-2xl font-bold flex justify-center items-center gap-3 transition-all bg-slate-200 text-slate-400 cursor-not-allowed w-full md:w-auto"; }
+        }
+
+        window.cancelTransfer = function() {
+            currentTransferReqs = []; selectedBranchIdForTransfer = '';
+            document.getElementById('transferBranchSelect').value = '';
+            document.getElementById('transferUploadArea').classList.add('opacity-40', 'grayscale', 'pointer-events-none');
+            document.getElementById('transferStep2').classList.replace('block', 'hidden');
+            document.getElementById('transferStep1').classList.replace('hidden', 'block');
+        }
+
+        window.saveTransferData = async function() {
+            if (!currentTransferReqs.every(i => i.status === 'complete')) return;
+            const btn = document.getElementById('saveTransferBtn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري الحفظ...'; btn.disabled = true;
+            try {
+                const branchName = window.globalData.branches[selectedBranchIdForTransfer].name;
+                const transferData = {
+                    branchId: selectedBranchIdForTransfer, branchName: branchName, timestamp: Date.now(),
+                    items: currentTransferReqs.map(i => ({ subCode: i.subCode, name: i.name, unit: i.unit !== undefined ? i.unit : 1, qty: i.reqQty, price: i.price }))
+                };
+                await push(ref(db, 'transfers'), transferData);
+                const updates = {};
+                currentTransferReqs.forEach(item => { updates[`inventory/${item.subCode}/stock`] = item.stock - item.reqQty; });
+                await update(ref(db), updates);
+                showToast('تم حفظ التحويل بنجاح!');
+                cancelTransfer(); 
+            } catch(e) { showToast('حدث خطأ أثناء الحفظ', 'error'); btn.innerHTML = 'اعتماد وحفظ'; btn.disabled = false; }
+        }
+
+        // تم تعديل دالة لقط الباركود عبر الكاميرا لاستدعاء نافذة الوحدات الرقمية عند اللقط في المخزن الرئيسي
+        window.openCameraScanner = function(inputId, isTransferMode, isAuditMode, itemName = null, subCode = null) {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); }).catch(e => {});
+            }
+            targetScannerInputId = inputId; isTransferScannerMode = isTransferMode; isAuditScannerMode = isAuditMode;
+            
+            const targetContainer = document.getElementById('scannerItemTarget');
+            const targetSpan = document.getElementById('scannerItemNameSpan');
+            
+            if (itemName) {
+                targetSpan.innerText = itemName;
+                targetContainer.classList.remove('hidden');
+            } else {
+                targetSpan.innerText = '';
+                targetContainer.classList.add('hidden');
+            }
+
+            document.getElementById('cameraScannerModal').classList.remove('hidden');
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, 
+                (decodedText) => {
+                    closeCameraScanner();
+                    
+                    // إذا كنا في المخزن الرئيسي ونلتقط كود دولي جديد
+                    if (!isTransferScannerMode && !isAuditScannerMode && subCode) {
+                        // بدلاً من الحفظ الفوري، نفتح نافذة طلب الوحدات الرقمية أولاً
+                        openUnitRequestModal(itemName, subCode, decodedText);
+                    } else {
+                        // التدفق الطبيعي في الحالات الأخرى
+                        const inputElement = document.getElementById(targetScannerInputId);
+                        if(inputElement) {
+                            inputElement.value = decodedText;
+                            if(isTransferScannerMode) { processScannedBarcode(decodedText); inputElement.value = ''; } 
+                            else if(isAuditScannerMode) { processAuditBarcode(decodedText); inputElement.value = ''; }
+                        }
+                    }
+                }, (errorMessage) => {}
+            ).catch((err) => { closeCameraScanner(); showToast("لا يمكن الوصول للكاميرا", "error"); });
+        }
+
+        window.closeCameraScanner = function() {
+            document.getElementById('cameraScannerModal').classList.add('hidden');
+            if(html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); }).catch(e => console.log(e)); html5QrcodeScanner = null; }
+        }
+
+        function renderArchive() {
+            const container = document.getElementById('archiveList');
+            container.innerHTML = '';
+            const transfersData = window.globalData.transfers;
+            const transfersArr = Object.keys(transfersData).map(k => ({id: k, ...transfersData[k]})).sort((a,b) => b.timestamp - a.timestamp);
+            if(transfersArr.length === 0) { container.innerHTML = '<p class="col-span-full text-center text-slate-400 font-bold py-10 text-lg">لا توجد عمليات تحويل مسجلة.</p>'; return; }
+
+            transfersArr.forEach(t => {
+                let itemsHtml = '';
+                t.items.forEach(i => { itemsHtml += `<div class="flex justify-between bg-white p-2 rounded border border-slate-100 text-sm font-semibold text-slate-700 mt-1"><span class="truncate w-3/4">${i.name}</span><span class="text-emerald-700 font-bold" dir="ltr">${i.qty}</span></div>`; });
+                container.innerHTML += `<div class="border border-slate-200 rounded-2xl p-6 bg-slate-50 hover:shadow-lg transition-shadow relative overflow-hidden"><div class="absolute top-0 right-0 w-2 h-full bg-blue-500"></div><div class="flex justify-between items-start mb-4 border-b border-slate-200 pb-4"><div><h3 class="font-bold text-xl text-blue-900">${t.branchName}</h3><p class="text-xs font-semibold text-slate-500 mt-1">${new Date(t.timestamp).toLocaleString('ar-EG')}</p></div><button onclick="printReceipt('${t.id}')" class="text-white bg-slate-800 hover:bg-blue-600 p-3 rounded-xl shadow-sm transition-colors" title="طباعة ريسيت"><i class="fas fa-print"></i></button></div><div class="max-h-32 overflow-y-auto pl-2">${itemsHtml}</div></div>`;
+            });
+        }
+
+        window.printReceipt = function(id) {
+            const t = window.globalData.transfers[id];
+            if(!t) return;
+            
+            let trs = '';
+            let totalItems = t.items.length;
+            let totalQty = 0; 
+
+            t.items.forEach(i => { 
+                totalQty += parseInt(i.qty || 0);
+                trs += `
+                <tr style="border-bottom: 1px dotted #000;">
+                    <td style="padding: 7px 0; text-align: right; vertical-align: top;">
+                        <span style="font-weight: bold; font-size: 13px; display: block; line-height: 1.3;">${i.name}</span>
+                        <span style="font-size: 11px; color: #333; font-family: monospace;">${i.subCode}</span>
+                    </td>
+                    <td style="padding: 7px 0; text-align: left; font-weight: 800; font-size: 15px; vertical-align: middle;">${i.qty}</td>
+                </tr>`; 
+            });
+
+            const html = `
+            <div style="font-family: 'Cairo', sans-serif; direction: rtl; text-align: right; color: black; background: white; padding: 2px;">
+                <div style="text-align: center; margin-bottom: 12px; border-bottom: 2px dashed #000; padding-bottom: 10px;">
+                    <div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <i class="fas fa-truck-loading" style="font-size: 20px; color: black;"></i>
+                        <h2 style="margin: 0; font-size: 18px; font-weight: 800; text-transform: uppercase;">المخازن برو</h2>
+                    </div>
+                    <p style="margin: 2px 0; font-size: 12px; font-weight: bold; color: #222;">إيصال تحويل مخزني معتمد</p>
+                    <div style="background: #000; color: white; display: inline-block; padding: 3px 10px; border-radius: 4px; font-weight: 800; font-size: 13px; margin: 6px 0;">
+                        فرع: ${t.branchName}
+                    </div>
+                    <p style="margin: 4px 0 0 0; font-size: 11px; font-weight: 600; font-family: monospace;">${new Date(t.timestamp).toLocaleString('ar-EG')}</p>
+                </div>
+
+                <table style="width: 100%; font-size: 12px; border-collapse: collapse; margin-bottom: 12px;">
+                    <thead>
+                        <tr style="border-bottom: 1.5px solid #000;">
+                            <th style="text-align: right; padding-bottom: 6px; font-weight: 800; font-size: 12px;">الصنف / الكود</th>
+                            <th style="text-align: left; padding-bottom: 6px; font-weight: 800; font-size: 12px;">الكمية</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${trs}
+                    </tbody>
+                </table>
+
+                <div style="border-top: 2px dashed #000; padding-top: 8px; margin-bottom: 15px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-weight: bold;">
+                        <span>إجمالي أنواع الأصناف:</span>
+                        <span style="font-weight: 800; font-size: 14px;">${totalItems} صنف</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px solid #ddd; padding-top: 4px;">
+                        <span>إجمالي القطع المحولة:</span>
+                        <span style="font-weight: 900; font-size: 16px; text-decoration: underline;">${totalQty} قطعة</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 25px; padding-top: 10px; border-top: 1px solid #000;">
+                    <table style="width: 100%; font-size: 11px; text-align: center;">
+                        <tr>
+                            <td style="width: 50%; padding-bottom: 15px; font-weight: bold;">توقيع أمين المخزن</td>
+                            <td style="width: 50%; padding-bottom: 15px; font-weight: bold;">توقيع مستلم الفرع</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 10px; color: #444;">..................................</td>
+                            <td style="font-size: 10px; color: #444;">..................................</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="text-align: center; margin-top: 20px; font-size: 10px; font-weight: bold; border-top: 1px dashed #ccc; padding-top: 8px;">
+                    شكراً لاستخدامكم نظام المخازن برو المطور ERP
+                </div>
+            </div>`;
+
+            const receiptDiv = document.getElementById('printable-receipt');
+            receiptDiv.innerHTML = html;
+            receiptDiv.classList.remove('hidden'); 
+
+            setTimeout(() => { 
+                window.print(); 
+                setTimeout(() => {
+                    receiptDiv.classList.add('hidden');
+                }, 500);
+            }, 300);
+        }
+
+        // ==========================================
+        window.exportArchiveCSV = function() {
+            const transfersData = window.globalData.transfers;
+            const transfersArr = Object.keys(transfersData).map(k => ({id: k, ...transfersData[k]}));
+            
+            if(transfersArr.length === 0) { 
+                alert('لا توجد بيانات لتصديرها'); 
+                return; 
+            }
+
+            let csvContent = "Bulk Edit Items,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
+            const headers = ["Barcode","Has Item Scanned","Source Warehouse","Target Warehouse","Item Code","Item Name","Using Date Expire","Is Taxable","Is Finished Item","Is Scrap Item","Quality Inspection","Subcontracted Item","Description","Item Group","Image","Location","Qty","Qty as per Stock UOM","Retain Sample","UOM","Stock UOM","Conversion Factor","Sample Quantity","Basic Rate (as per Stock UOM)","Additional Cost","Valuation Rate","Allow Zero Valuation Rate","Set Basic Rate Manually","Basic Amount","Amount","Sales Price","Use Serial No / Batch Fields","Serial and Batch Bundle","Serial No","Batch No","Difference Account","Cost Center","Project","Actual Qty (at source/target)","Transferred Qty","BOM No","Allow Alternative Item","Material Request","Material Request Item","Original Item","Against Stock Entry","Stock Entry Child","PO Supplied Item","SCO Supplied Item","Putaway Rule","Reference Purchase Receipt","Job Card Item","Source Item Expiry Date","Expiry Date Qty","Target Item Expiry Date"];
+            csvContent += headers.join(",") + "\r\n";
+            
+            const fieldNames = ["barcode","has_item_scanned","s_warehouse","t_warehouse","item_code","item_name","custom_using_date_expire","custom_is_taxable","is_finished_item","is_scrap_item","quality_inspection","subcontracted_item","description","item_group","image","custom_location","qty","transfer_qty","retain_sample","uom","stock_uom","conversion_factor","sample_quantity","basic_rate","additional_cost","valuation_rate","allow_zero_valuation_rate","set_basic_rate_manually","basic_amount","amount","custom_sales_price","use_serial_batch_fields","serial_and_batch_bundle","serial_no","batch_no","expense_account","cost_center","project","actual_qty","transferred_qty","bom_no","allow_alternative_item","material_request","material_request_item","original_item","against_stock_entry","ste_detail","po_detail","sco_rm_detail","putaway_rule","reference_purchase_receipt","job_card_item","item_expiry_date","custom_expiry_date_qty","to_item_expiry_date"];
+            csvContent += fieldNames.join(",") + "\r\n";
+
+            csvContent += " , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , ,BOM No. for a Finished Good Item , ,Material Request used to make this Stock Entry , , , , , , , , , , , , \r\n";
+            csvContent += "The CSV format is case sensitive,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
+            csvContent += "Do not edit headers which are preset in the template,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
+            csvContent += "------,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
+
+            transfersArr.forEach(t => {
+                t.items.forEach(i => {
+                    let row = new Array(headers.length).fill("");
+                    row[4]  = i.subCode || "";        
+                    row[5]  = i.name || "";           
+                    row[16] = i.qty || 0;             
+                    row[19] = i.unit !== undefined ? i.unit : 1;       
+                    csvContent += row.join(",") + "\r\n";
+                });
+            });
+
+            const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `Items_Export_${new Date().getTime()}.csv`;
+            link.click();
+        };
+
+        function renderReports() {
+            const tbody = document.getElementById('reportsTableBody');
+            tbody.innerHTML = '';
+            const invData = window.globalData.inventory;
+            const transData = window.globalData.transfers;
+            const movements = {};
+            for(const key in invData) { movements[key] = { ...invData[key], totalOut: 0, branchDetails: {} }; }
+            for(const tKey in transData) {
+                const t = transData[tKey];
+                t.items.forEach(i => {
+                    if(movements[i.subCode]) { movements[i.subCode].totalOut += i.qty; movements[i.subCode].branchDetails[t.branchName] = (movements[i.subCode].branchDetails[t.branchName] || 0) + i.qty; }
+                });
+            }
+            for(const key in movements) {
+                const m = movements[key];
+                let branchesHtml = '';
+                for(const b in m.branchDetails) { branchesHtml += `<span class="bg-blue-50 text-blue-800 border border-blue-200 px-2 py-1 rounded-lg text-xs font-bold mr-1 inline-block mb-1">${b}: ${m.branchDetails[b]}</span>`; }
+                tbody.innerHTML += `<tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors"><td class="p-4 font-mono text-slate-500">${m.subCode}</td><td class="p-4 font-bold text-slate-800">${m.name}</td><td class="p-4 font-bold text-slate-600">${m.openingStock || m.stock + m.totalOut}</td><td class="p-4 font-bold text-red-600">${m.totalOut}</td><td class="p-4">${branchesHtml}</td><td class="p-4 font-black text-lg text-emerald-700 bg-emerald-50/50">${m.stock}</td></tr>`;
+            }
+        }
+
+        function renderLogs() {
+            const container = document.getElementById('logsContainer'); 
+            if (!container) return; 
+            container.innerHTML = '';
+            const logsData = window.globalData.logs;
+            const logsArr = Object.keys(logsData).map(k => logsData[k]).sort((a,b) => b.timestamp - a.timestamp);
+            if(logsArr.length === 0) { container.innerHTML = '<p class="text-center text-slate-400 font-bold py-10">لا توجد حركات مسجلة بعد.</p>'; return; }
+            logsArr.forEach(log => {
+                const isErr = log.type === 'error';
+                container.innerHTML += `<div class="p-4 rounded-xl border-r-4 flex flex-col sm:flex-row justify-between sm:items-center gap-2 ${isErr ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}"><span class="font-bold text-slate-700 text-base md:text-lg"><i class="fas ${isErr ? 'fa-exclamation-circle text-red-500' : 'fa-info-circle text-blue-500'} ml-2"></i>${log.description}</span><span class="text-xs font-semibold text-slate-500 bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-sm w-max">${log.dateStr}</span></div>`;
+            });
+        }
+
+    </script>
+</body>
+</html>
