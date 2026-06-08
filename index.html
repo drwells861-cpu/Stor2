@@ -936,11 +936,6 @@
 
         // ==========================================
         // التصدير الصارم المخصص لـ ERPNext (بالتعديلات المطلوبة)
-        // ==========================================
-       /**
- * دالة تصدير البيانات بتنسيق مطابق لملف Items (6)-1.csv
- * تم إضافة الصفوف الأربعة التعريفية وتثبيت UOM
- */
 window.exportArchiveCSV = function() {
     const transfersData = window.globalData.transfers;
     const transfersArr = Object.keys(transfersData).map(k => ({id: k, ...transfersData[k]}));
@@ -950,27 +945,24 @@ window.exportArchiveCSV = function() {
         return; 
     }
 
-    // 1. الصف الأول: عنوان القالب
+    // 1. الصف الأول
     let csvContent = "Bulk Edit Items,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
     
-    // 2. الصف الثاني: تحذير القالب
-    csvContent += "Do not edit headers which are preset in the template,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
-    
-    // 3. الصف الثالث: تحذير الحالة
+    // 2. إضافة الصفوف التعريفية الأربعة كما هي في ملف Items 6
+    csvContent += " , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , , ,BOM No. for a Finished Good Item , ,Material Request used to make this Stock Entry , , , , , , , , , , , , \r\n";
     csvContent += "The CSV format is case sensitive,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
-    
-    // 4. الصف الرابع: الفاصل
+    csvContent += "Do not edit headers which are preset in the template,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
     csvContent += "------,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
 
-    // 5. صف العناوين الأساسية
+    // 3. صف العناوين الرئيسي
     const headers = ["Barcode","Has Item Scanned","Source Warehouse","Target Warehouse","Item Code","Item Name","Using Date Expire","Is Taxable","Is Finished Item","Is Scrap Item","Quality Inspection","Subcontracted Item","Description","Item Group","Image","Location","Qty","Qty as per Stock UOM","Retain Sample","UOM","Stock UOM","Conversion Factor","Sample Quantity","Basic Rate (as per Stock UOM)","Additional Cost","Valuation Rate","Allow Zero Valuation Rate","Set Basic Rate Manually","Basic Amount","Amount","Sales Price","Use Serial No / Batch Fields","Serial and Batch Bundle","Serial No","Batch No","Difference Account","Cost Center","Project","Actual Qty (at source/target)","Transferred Qty","BOM No","Allow Alternative Item","Material Request","Material Request Item","Original Item","Against Stock Entry","Stock Entry Child","PO Supplied Item","SCO Supplied Item","Putaway Rule","Reference Purchase Receipt","Job Card Item","Source Item Expiry Date","Expiry Date Qty","Target Item Expiry Date"];
     csvContent += headers.join(",") + "\r\n";
     
-    // 6. صف الرموز البرمجية
+    // 4. صف الرموز البرمجية
     const fieldNames = ["barcode","has_item_scanned","s_warehouse","t_warehouse","item_code","item_name","custom_using_date_expire","custom_is_taxable","is_finished_item","is_scrap_item","quality_inspection","subcontracted_item","description","item_group","image","custom_location","qty","transfer_qty","retain_sample","uom","stock_uom","conversion_factor","sample_quantity","basic_rate","additional_cost","valuation_rate","allow_zero_valuation_rate","set_basic_rate_manually","basic_amount","amount","custom_sales_price","use_serial_batch_fields","serial_and_batch_bundle","serial_no","batch_no","expense_account","cost_center","project","actual_qty","transferred_qty","bom_no","allow_alternative_item","material_request","material_request_item","original_item","against_stock_entry","ste_detail","po_detail","sco_rm_detail","putaway_rule","reference_purchase_receipt","job_card_item","item_expiry_date","custom_expiry_date_qty","to_item_expiry_date"];
     csvContent += fieldNames.join(",") + "\r\n";
 
-    // 7. تعبئة البيانات (تبدأ من الصف السابع)
+    // 5. إضافة الأصناف
     transfersArr.forEach(t => {
         t.items.forEach(i => {
             let row = new Array(headers.length).fill("");
@@ -978,22 +970,20 @@ window.exportArchiveCSV = function() {
             row[4]  = i.subCode || "";        // Item Code
             row[5]  = i.name || "";           // Item Name
             row[16] = i.qty || 0;             // Qty
-            row[19] = "Ø¹Ù„Ø¨Ø©";             // الصيغة المطلوبة للوحدة UOM
+            row[19] = "Ø¹Ù„Ø¨Ø©";             // النص المطلوب للوحدة
             
             csvContent += row.join(",") + "\r\n";
         });
     });
 
-    // التصدير
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // 6. التصدير
+    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Items_Export_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = `Items_Export_${new Date().getTime()}.csv`;
     link.click();
-    document.body.removeChild(link);
 };
+    
 
         // ==========================================
         function renderReports() {
