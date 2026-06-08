@@ -937,53 +937,58 @@
         // ==========================================
         // التصدير الصارم المخصص لـ ERPNext (بالتعديلات المطلوبة)
         // ==========================================
-        window.exportArchiveCSV = function() {
-            const transfersData = window.globalData.transfers;
-            const transfersArr = Object.keys(transfersData).map(k => ({id: k, ...transfersData[k]})).sort((a,b) => b.timestamp - a.timestamp);
+       /**
+ * دالة تصدير البيانات بتنسيق مطابق لملف Items (6)-1.csv
+ * تستخدم هذه الدالة التنسيق الخام (Raw Format) المطلوب لاستيراد ERPNext
+ */
+window.exportArchiveCSV = function() {
+    const transfersData = window.globalData.transfers;
+    const transfersArr = Object.keys(transfersData).map(k => ({id: k, ...transfersData[k]}));
+    
+    if(transfersArr.length === 0) { 
+        alert('لا توجد بيانات لتصديرها'); 
+        return; 
+    }
+
+    // 1. الصف الأول: العنوان المعتمد في القالب
+    let csvContent = "Bulk Edit Items,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n";
+    
+    // 2. الصف الثاني: العناوين الأساسية (بدون علامات تنصيص لضمان التوافق)
+    const headers = ["Barcode","Has Item Scanned","Source Warehouse","Target Warehouse","Item Code","Item Name","Using Date Expire","Is Taxable","Is Finished Item","Is Scrap Item","Quality Inspection","Subcontracted Item","Description","Item Group","Image","Location","Qty","Qty as per Stock UOM","Retain Sample","UOM","Stock UOM","Conversion Factor","Sample Quantity","Basic Rate (as per Stock UOM)","Additional Cost","Valuation Rate","Allow Zero Valuation Rate","Set Basic Rate Manually","Basic Amount","Amount","Sales Price","Use Serial No / Batch Fields","Serial and Batch Bundle","Serial No","Batch No","Difference Account","Cost Center","Project","Actual Qty (at source/target)","Transferred Qty","BOM No","Allow Alternative Item","Material Request","Material Request Item","Original Item","Against Stock Entry","Stock Entry Child","PO Supplied Item","SCO Supplied Item","Putaway Rule","Reference Purchase Receipt","Job Card Item","Source Item Expiry Date","Expiry Date Qty","Target Item Expiry Date"];
+    csvContent += headers.join(",") + "\r\n";
+    
+    // 3. الصف الثالث: الرموز البرمجية (الحقول البرمجية للنظام)
+    const fieldNames = ["barcode","has_item_scanned","s_warehouse","t_warehouse","item_code","item_name","custom_using_date_expire","custom_is_taxable","is_finished_item","is_scrap_item","quality_inspection","subcontracted_item","description","item_group","image","custom_location","qty","transfer_qty","retain_sample","uom","stock_uom","conversion_factor","sample_quantity","basic_rate","additional_cost","valuation_rate","allow_zero_valuation_rate","set_basic_rate_manually","basic_amount","amount","custom_sales_price","use_serial_batch_fields","serial_and_batch_bundle","serial_no","batch_no","expense_account","cost_center","project","actual_qty","transferred_qty","bom_no","allow_alternative_item","material_request","material_request_item","original_item","against_stock_entry","ste_detail","po_detail","sco_rm_detail","putaway_rule","reference_purchase_receipt","job_card_item","item_expiry_date","custom_expiry_date_qty","to_item_expiry_date"];
+    csvContent += fieldNames.join(",") + "\r\n";
+
+    // 4. تعبئة البيانات من النظام
+    transfersArr.forEach(t => {
+        t.items.forEach(i => {
+            // إنشاء مصفوفة فارغة بطول العناوين
+            let row = new Array(headers.length).fill("");
             
-            if(transfersArr.length === 0) { 
-                showToast('لا توجد بيانات لتصديرها', 'error'); 
-                return; 
-            }
-
-            const csvLines = [];
+            // تعيين القيم الأساسية المطلوبة
+            row[4]  = i.subCode || "";        // Item Code
+            row[5]  = i.name || "";           // Item Name
+            row[16] = i.qty || 0;             // Qty
+            row[19] = "Ø¹Ù„Ø¨Ø©";                // UOM (يمكنك تغييرها حسب الوحدة)
             
-            // 1. الصف الأول
-            csvLines.push('"Bulk Edit Items"');
+            // تحويل الصف إلى سلسلة نصية مفصولة بفاصلة
+            csvContent += row.join(",") + "\r\n";
+        });
+    });
 
-            // 2. الصف الثاني
-            const headers1 = ["Barcode", "Has Item Scanned", "Source Warehouse", "Target Warehouse", "Item Code", "Item Name", "Using Date Expire", "Is Taxable", "Is Finished Item", "Is Scrap Item", "Quality Inspection", "Subcontracted Item", "Description", "Item Group", "Image", "Location", "Qty", "Qty as per Stock UOM", "Retain Sample", "UOM", "Stock UOM", "Conversion Factor", "Sample Quantity", "Basic Rate (as per Stock UOM)", "Additional Cost", "Valuation Rate", "Allow Zero Valuation Rate", "Set Basic Rate Manually", "Basic Amount", "Amount", "Sales Price", "Use Serial No / Batch Fields", "Serial and Batch Bundle", "Serial No", "Batch No", "Difference Account", "Cost Center", "Project", "Actual Qty (at source/target)", "Transferred Qty", "BOM No", "Allow Alternative Item", "Material Request", "Material Request Item", "Original Item", "Against Stock Entry", "Stock Entry Child", "PO Supplied Item", "SCO Supplied Item", "Putaway Rule", "Reference Purchase Receipt", "Job Card Item", "Source Item Expiry Date", "Expiry Date Qty", "Target Item Expiry Date"];
-            csvLines.push(headers1.map(h => '"' + h + '"').join(','));
-
-            // 3. الصف الثالث
-            const headers2 = ["barcode", "has_item_scanned", "s_warehouse", "t_warehouse", "item_code", "item_name", "custom_using_date_expire", "custom_is_taxable", "is_finished_item", "is_scrap_item", "quality_inspection", "subcontracted_item", "description", "item_group", "image", "custom_location", "qty", "transfer_qty", "retain_sample", "uom", "stock_uom", "conversion_factor", "sample_quantity", "basic_rate", "additional_cost", "valuation_rate", "allow_zero_valuation_rate", "set_basic_rate_manually", "basic_amount", "amount", "custom_sales_price", "use_serial_batch_fields", "serial_and_batch_bundle", "serial_no", "batch_no", "expense_account", "cost_center", "project", "actual_qty", "transferred_qty", "bom_no", "allow_alternative_item", "material_request", "material_request_item", "original_item", "against_stock_entry", "ste_detail", "po_detail", "sco_rm_detail", "putaway_rule", "reference_purchase_receipt", "job_card_item", "item_expiry_date", "custom_expiry_date_qty", "to_item_expiry_date"];
-            csvLines.push(headers2.map(h => '"' + h + '"').join(','));
-
-            // 4. تعبئة بيانات الأصناف حسب طلبك الأخير
-            transfersArr.forEach(t => {
-                t.items.forEach(i => {
-                    // إنشاء صف فارغ مكون من 55 عمود
-                    const row = new Array(55).fill('""');
-                    
-                    // تعبئة الأعمدة المطلوبة فقط:
-                    row[4]  = '"' + (i.subCode || '') + '"';  // عمود Item Code (الكود الفرعي)
-                    row[5]  = '"' + (i.name || '') + '"';     // عمود Item Name (اسم المنتج)
-                    row[16] = i.qty || 0;                     // عمود Qty (الكمية المحولة)
-                    row[19] = '"Ø¹Ù„Ø¨Ø©"';                    // عمود UOM (القيمة الافتراضية المطلوبة تماماً)
-                    
-                    csvLines.push(row.join(','));
-                });
-            });
-
-            // 5. بناء الملف وتنزيله
-            const csvContent = "\uFEFF" + csvLines.join("\n");
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = `ERP_Items_Import_${Date.now()}.csv`;
-            link.click();
-            showToast('تم تصدير ملف الـ CSV بنجاح وهو جاهز للرفع المباشر!');
-        }
+    // 5. التصدير باستخدام Blob لضمان سلامة الترميز
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Items_Export_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+            
 
         // ==========================================
         function renderReports() {
